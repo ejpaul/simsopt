@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import scipy
+import scipy.linalg
 from scipy.io import netcdf
 import f90nml
 from scanf import scanf
@@ -67,6 +68,8 @@ class VmecInput:
         self.update_modes(nml.get("mpol"), nml.get("ntor"))
 
         self.update_grids(ntheta, nzeta)
+        self.min_curvature_radius = 0.1
+        self.exp_weight = 0.01
 
     def update_namelist(self):
         """
@@ -100,6 +103,17 @@ class VmecInput:
         [self.mnmax, self.xm, self.xn] = init_modes(
                 self.mpol - 1, self.ntor)
         [self.rbc,self.zbs] = self.read_boundary_input()
+        
+    def init_grid(self,ntheta,nzeta):
+        thetas = np.linspace(0, 2 * np.pi, ntheta + 1)
+        zetas = np.linspace(0,2 * np.pi / self.nfp, nzeta + 1)
+        thetas = np.delete(thetas, -1)
+        zetas = np.delete(zetas, -1)
+        [thetas_2d, zetas_2d] = np.meshgrid(thetas, zetas)
+        dtheta = thetas[1] - thetas[0]
+        dzeta = zetas[1] - zetas[0]
+        
+        return thetas_2d,zetas_2d, dtheta, dzeta
         
     def update_grids(self,ntheta,nzeta):
         """
@@ -914,6 +928,117 @@ class VmecInput:
             + (dzdtheta*d2rdzetadzmns[0,:,:,:] - dxdtheta*d2rdzetadzmns[2,:,:,:])*ny \
             + (dxdtheta*d2rdzetadzmns[1,:,:,:] - dydtheta*d2rdzetadzmns[0,:,:,:])*nz
         return dNdrmnc, dNdzmns
+    
+    def summed_proximity(self,ntheta=None,nzeta=None):
+        """
+        Constraint function integrated over the two angles
+        """
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+        this_proximity = self.proximity(ntheta=ntheta,nzeta=nzeta)
+        return np.sum(this_proximity)*dtheta*dzeta
+  
+    def summed_proximity_derivatives(self,xm_sensitivity,xn_sensitivity,\
+                                     ntheta=None,nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+
+        [dQpdrmnc, dQpdzmns] = self.proximity_derivatives(xm_sensitivity,xn_sensitivity,ntheta,nzeta)
+        return np.sum(dQpdrmnc,axis=(0,2))*dtheta*dzeta, \
+               np.sum(dQpdzmns,axis=(0,2))*dtheta*dzeta
+
+    def proximity(self,derivatives=False,ntheta=None,nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+        [X, Y, Z, R] = self.position(theta=theta,zeta=zeta)
+        [dxdtheta, dxdzeta, dydtheta, dydzeta, dZdtheta, dZdzeta, dRdtheta, \
+                dRdzeta] = self.position_first_derivatives(theta=theta,zeta=zeta)
+        dldtheta = np.sqrt(dRdtheta**2 + dZdtheta**2)
+        tR = dRdtheta/dldtheta
+        tz = dZdtheta/dldtheta
+        Qp = np.zeros((nzeta,ntheta))
+        if derivatives:
+            dQpdp1 = np.zeros((nzeta,ntheta,2))
+            dQpdp2 = np.zeros((nzeta,ntheta,ntheta,2))
+            dQpdtau2 = np.zeros((nzeta,ntheta,ntheta,2))
+            dQpdlprime = np.zeros((nzeta,ntheta,ntheta))
+        for izeta in range(nzeta):
+            if derivatives:
+                [Qp[izeta,:],dQpdp1[izeta,:,:],dQpdp2[izeta,:,:,:],\
+                     dQpdtau2[izeta,:,:,:],dQpdlprime[izeta,:]] = \
+                     proximity_slice(R[izeta,:],Z[izeta,:],tR[izeta,:],\
+                                     tz[izeta,:],dldtheta[izeta,:],
+                derivatives=derivatives,min_curvature_radius=self.min_curvature_radius,exp_weight=self.exp_weight)
+            else:
+                Qp[izeta,:] = proximity_slice(R[izeta,:],Z[izeta,:],tR[izeta,:],\
+                              tz[izeta,:],dldtheta[izeta,:],derivatives=derivatives,\
+                    min_curvature_radius=self.min_curvature_radius,exp_weight=self.exp_weight)
+        if derivatives:
+            return dtheta*Qp, dtheta*dQpdp1, dtheta*dQpdp2, dtheta*dQpdtau2,\
+                   dtheta*dQpdlprime 
+        else:
+            return dtheta*Qp
+
+    def proximity_derivatives(self,xm_sensitivity,xn_sensitivity,ntheta=None,nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+            
+        [Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime] = self.proximity(derivatives=True,ntheta=ntheta,nzeta=nzeta)
+        [X, Y, Z, R] = self.position(theta=theta,zeta=zeta)
+        [dxdtheta, dxdzeta, dydtheta, dydzeta, dZdtheta, dZdzeta, dRdtheta, \
+                dRdzeta] = self.position_first_derivatives(theta=theta,zeta=zeta)
+        lprime = np.sqrt(dRdtheta**2 + dZdtheta**2)
+        
+        mnmax_sensitivity = len(xm_sensitivity)
+        dQpdrmnc = np.zeros((nzeta,mnmax_sensitivity,ntheta))
+        dQpdzmns = np.zeros((nzeta,mnmax_sensitivity,ntheta))
+        for izeta in range(nzeta):
+            for imn in range(mnmax_sensitivity):
+                angle = xm_sensitivity[imn]*theta[izeta,:] - self.nfp*xn_sensitivity[imn]*zeta[izeta,:]
+                dRdrmnc = np.cos(angle)
+                dZdzmns = np.sin(angle)
+                d2Rdthetadrmnc = -xm_sensitivity[imn]*np.sin(angle)
+                d2Zdthetadzmns = xm_sensitivity[imn]*np.cos(angle)
+                dlprimedrmnc = dRdtheta[izeta,:]*d2Rdthetadrmnc/lprime[izeta,:]
+                dlprimedzmns = dZdtheta[izeta,:]*d2Zdthetadzmns/lprime[izeta,:]
+                dtauRdrmnc = d2Rdthetadrmnc/lprime[izeta,:] - dRdtheta[izeta,:]*dlprimedrmnc/lprime[izeta,:]**2
+                dtauRdzmns = - dRdtheta[izeta,:]*dlprimedzmns/lprime[izeta,:]**2
+                dtauZdrmnc = - dZdtheta[izeta,:]*dlprimedrmnc/lprime[izeta,:]**2
+                dtauZdzmns = d2Zdthetadzmns/lprime[izeta,:] - dZdtheta[izeta,:]*dlprimedzmns/lprime[izeta,:]**2
+                for itheta in range(ntheta):
+                    dQpdrmnc[izeta,imn,itheta] = dQpdp1[izeta,itheta,0]*dRdrmnc[itheta] + np.dot(dQpdp2[izeta,itheta,:,0],dRdrmnc) \
+                        + np.dot(dQpdtau2[izeta,itheta,:,0],dtauRdrmnc) \
+                        + np.dot(dQpdtau2[izeta,itheta,:,1],dtauZdrmnc) \
+                        + np.dot(dQpdlprime[izeta,itheta,:],dlprimedrmnc)
+                    dQpdzmns[izeta,imn,itheta] = dQpdp1[izeta,itheta,1]*dZdzmns[itheta] + np.dot(dQpdp2[izeta,itheta,:,1],dZdzmns) \
+                        + np.dot(dQpdtau2[izeta,itheta,:,0],dtauRdzmns) \
+                        + np.dot(dQpdtau2[izeta,itheta,:,1],dtauZdzmns) \
+                        + np.dot(dQpdlprime[izeta,itheta,:],dlprimedzmns)
+        return dQpdrmnc, dQpdzmns
 
 #TODO : test for correct sizes
 def point_in_polygon(R, Z, R0, Z0):
@@ -980,3 +1105,86 @@ def min_max_indices_2d(varName,inputFilename):
                 index_1.append(out[0])
                 index_2.append(out[1])
     return min(index_1), min(index_2), max(index_1), max(index_2)
+
+  
+def proximity_slice(R,Z,tR,tZ,dldtheta,min_curvature_radius,exp_weight,derivatives=False):
+    assert((np.shape(R) == np.shape(Z)) and (np.shape(R) == np.shape(tR)) and (np.shape(R) == np.shape(tZ)) \
+         and (np.shape(R) == np.shape(dldtheta)))
+    ntheta = len(R)
+    Qp = np.zeros((ntheta))
+    if derivatives:
+        dQpdp1 = np.zeros((ntheta,2))
+        dQpdp2 = np.zeros((ntheta,ntheta,2))
+        dQpdtau2 = np.zeros((ntheta,ntheta,2))
+        dQpdlprime = np.zeros((ntheta,ntheta))
+    for itheta in range(ntheta):
+        p1 = [R[itheta],Z[itheta]]
+        Sc = np.zeros(ntheta)
+        if derivatives:
+            dScdp1 = np.zeros((ntheta,2))
+        for ithetap in range(ntheta):
+            p2 = [R[ithetap],Z[ithetap]]
+            tau2 = [tR[ithetap],tZ[ithetap]]
+            if (p1 != p2):
+                # Sc(p1,p2)
+                Sc[ithetap] = self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight)
+                if derivatives:
+                    [dScdp1[ithetap,:],dScdp2,dScdtau2] = \
+                        self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius,exp_weight)
+                    dQpdp2[itheta,ithetap,:] = dScdp2*dldtheta[ithetap]
+                    dQpdtau2[itheta,ithetap,:] = dScdtau2*dldtheta[ithetap]
+                    dQpdlprime[itheta,ithetap] = Sc[ithetap]
+        # Integral over ithetap
+        Qp[itheta] = np.dot(Sc,dldtheta)
+        if derivatives:
+            dQpdp1[itheta,:] = np.dot(dScdp1.T,dldtheta)
+    if derivatives:
+        return Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime
+    else:
+        return Qp
+  
+def normalDistanceRatio(p1,p2,tau2):
+    p1 = np.array(p1)
+    p2 = np.array(p2)
+    tau2 = np.array(tau2)
+    norm = scipy.linalg.norm(p1-p2)
+    return 1-((p2-p1).dot(tau2))**2/norm**2
+
+def normalDistanceRatio_gradient(p1,p2,tau2):
+    p1 = np.array(p1)
+    p2 = np.array(p2)
+    tau2 = np.array(tau2)
+    norm = scipy.linalg.norm(p1-p2)
+    dnormalDistanceRatiodp1 = -2*((p2-p1).dot(tau2)/norm)*(-tau2/norm + ((p2-p1).dot(tau2)/norm**3)*(p2-p1))
+    dnormalDistanceRatiodp2 = -2*((p2-p1).dot(tau2)/norm)*( tau2/norm + ((p2-p1).dot(tau2)/norm**3)*(p1-p2))
+    dnormalDistanceRatiodtau2 = -2*((p2-p1).dot(tau2)/norm)*((p2-p1)/norm)
+    return dnormalDistanceRatiodp1,dnormalDistanceRatiodp2,dnormalDistanceRatiodtau2    
+  
+# Given 2 points p1 and p2 and tangent at p2, compute self-contact function [(26) in Walker]
+def self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight):
+    p1 = np.array(p1)
+    p2 = np.array(p2)
+    norm = scipy.linalg.norm(p1-p2)
+    normal_distance_ratio = normalDistanceRatio(p1,p2,tau2)
+    if (normal_distance_ratio > 0):
+        return np.exp(-(norm/normal_distance_ratio-min_curvature_radius)/exp_weight)
+    else:
+        return 0
+
+def self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius,exp_weight):
+    p1 = np.array(p1)
+    p2 = np.array(p2)
+    norm = scipy.linalg.norm(p1-p2)
+    assert(norm!=0)
+    N = normalDistanceRatio(p1,p2,tau2) # norm distance ratio squared
+    [dnormalDistanceRatiodp1,dnormalDistanceRatiodp2,dnormalDistanceRatiodtau2] \
+        = normalDistanceRatio_gradient(p1,p2,tau2)
+    if (N != 0):
+        dScdp1 = (p1-p2)/(norm*N) - norm*dnormalDistanceRatiodp1/(N*N)
+        dScdp2 = (p2-p1)/(norm*N) - norm*dnormalDistanceRatiodp2/(N*N)
+        dScdtau2 = - norm*dnormalDistanceRatiodtau2/(N*N)
+        return -self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight)*dScdp1/exp_weight,\
+            -self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight)*dScdp2/exp_weight,\
+            -self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight)*dScdtau2/exp_weight
+    else:
+        return 0, 0, 0
