@@ -42,6 +42,7 @@ class VmecOutput:
         self.mpol = f.variables["mpol"][()]
         self.ntor = f.variables["ntor"][()]
         self.iota = f.variables["iotas"][()]
+        self.iotaf = f.variables["iotaf"][()]
         self.vp = f.variables["vp"][()]
         self.pres = f.variables["pres"][()]
         self.volume = f.variables["volume_p"][()]
@@ -295,6 +296,28 @@ class VmecOutput:
         iota_function = np.sum(weight(self.s_half) * self.iota) * self.ds * \
             self.psi[-1] * self.sign_jac
         return iota_function
+    
+    def evaluate_iota_prime_objective(self, weight):
+        """
+        Computes integrated rotational transform objective function
+            
+        Args:
+            weight (function): returns weight as a function of normalized
+                toroidal flux
+            
+        Returns:
+            iota_prime_function (float): shear integrated against
+                weight function on half grid
+            
+        """
+        if (not callable(weight)):
+            raise TypeError('weight must be a function')
+        self.iota_prime = (self.iotaf[1::]-self.iotaf[0:-1])/(self.ds)
+        iota_prime_function = 0.5 * np.sum(weight(self.s_half) * self.iota_prime \
+                               * self.iota_prime) * self.ds * \
+            self.psi[-1] * self.sign_jac
+        return iota_prime_function
+
   
     def evaluate_well_objective(self, weight):
         """
