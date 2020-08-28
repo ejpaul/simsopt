@@ -297,6 +297,13 @@ class VmecOutput:
             self.psi[-1] * self.sign_jac
         return iota_function
     
+    def evaluate_iota_target_objective(self, weight, target):
+        if (not callable(weight)):
+            raise TypeError('weight must be a function')
+        iota_target_function = 0.5 * np.sum(weight(self.s_half) * \
+                    (self.iota - target)**2) * self.ds * self.psi[-1] * self.sign_jac
+        return iota_target_function        
+    
     def evaluate_iota_prime_objective(self, weight):
         """
         Computes integrated rotational transform objective function
@@ -314,10 +321,8 @@ class VmecOutput:
             raise TypeError('weight must be a function')
         self.iota_prime = (self.iotaf[1::]-self.iotaf[0:-1])/(self.ds)
         iota_prime_function = 0.5 * np.sum(weight(self.s_half) * self.iota_prime \
-                               * self.iota_prime) * self.ds * \
-            self.psi[-1] * self.sign_jac
+                               * self.iota_prime) * self.ds 
         return iota_prime_function
-
   
     def evaluate_well_objective(self, weight):
         """
@@ -837,6 +842,10 @@ class VmecOutput:
             sin_angle = np.sin(angle)
             Bsupu_end += bsupumnc_end[im] * cos_angle
             Bsupv_end += bsupvmnc_end[im] * cos_angle
+        for im in range(self.mnmax):
+            angle = self.xm[im] * self.thetas_2d - self.xn[im] * self.zetas_2d
+            cos_angle = np.cos(angle)
+            sin_angle = np.sin(angle)
             R_end += rmnc_end[im] * cos_angle
             Z_end += zmns_end[im] * sin_angle
         Bx_end = Bsupu_end * dXdu_end + Bsupv_end * dXdv_end
