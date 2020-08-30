@@ -682,6 +682,26 @@ class VmecInput:
         self.zaxis = zaxis_cs
         axisSuccess = True
         return axisSuccess
+    
+    def test_boundary(self,theta=None,zeta=None):
+        import matplotlib.pyplot as plt
+        if (theta is None or zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:
+            ntheta = len(theta[0,:])
+            nzeta = len(zeta[:,0])
+        [X,Y,Z,R] = self.position(theta=theta,zeta=zeta)
+        if np.any(R<0):
+            return True
+        # Iterate over cross-sections
+        for izeta in range(nzeta):
+            if (self_intersect(R[izeta,:],Z[izeta,:])):
+                plt.plot(R[izeta,:],Z[izeta,:],marker='*')
+                print(izeta)
+                return True
             
     def radius_derivatives(self, xm_sensitivity, xn_sensitivity, theta=None, 
                            zeta=None):
@@ -929,6 +949,40 @@ class VmecInput:
             + (dxdtheta*d2rdzetadzmns[1,:,:,:] - dydtheta*d2rdzetadzmns[0,:,:,:])*nz
         return dNdrmnc, dNdzmns
     
+    def global_curvature(self,theta=None,zeta=None):
+        if (theta is None or zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            dtheta = theta[0,1]-theta[0,0]
+            dzeta = zeta[1,0]-zeta[0,0]
+            ntheta = len(theta[0,:])
+            nzeta = len(zeta[:,0])
+        [X, Y, Z, R] = self.position(theta=theta,zeta=zeta)
+        [dxdtheta, dxdzeta, dydtheta, dydzeta, dZdtheta, dZdzeta, dRdtheta, \
+                dRdzeta] = self.position_first_derivatives(theta=theta,zeta=zeta)
+        dldtheta = np.sqrt(dRdtheta**2 + dZdtheta**2)
+        tR = dRdtheta/dldtheta
+        tz = dZdtheta/dldtheta
+        global_curvature_radius = np.zeros((nzeta,ntheta))
+        for izeta in range(nzeta):
+            for itheta in range(ntheta):
+                p1 = [R[izeta,itheta],Z[izeta,itheta]]
+                this_global_curvature = np.zeros(ntheta)
+                for ithetap in range(ntheta):
+                    p2 = [R[izeta,ithetap],Z[izeta,ithetap]]
+                    t2 = [tR[izeta,ithetap],tz[izeta,ithetap]]
+                    if (np.all(np.array(p1) != np.array(p2))):
+                        this_global_curvature[ithetap] = self_contact(p1,p2,t2)
+                    else:
+                        this_global_curvature[ithetap] = 1e12
+                global_curvature_radius[izeta,itheta] = np.min(this_global_curvature)
+        return global_curvature_radius
+        
     def summed_proximity(self,ntheta=None,nzeta=None):
         """
         Constraint function integrated over the two angles
@@ -1158,7 +1212,21 @@ def normalDistanceRatio_gradient(p1,p2,tau2):
     dnormalDistanceRatiodp1 = -2*((p2-p1).dot(tau2)/norm)*(-tau2/norm + ((p2-p1).dot(tau2)/norm**3)*(p2-p1))
     dnormalDistanceRatiodp2 = -2*((p2-p1).dot(tau2)/norm)*( tau2/norm + ((p2-p1).dot(tau2)/norm**3)*(p1-p2))
     dnormalDistanceRatiodtau2 = -2*((p2-p1).dot(tau2)/norm)*((p2-p1)/norm)
-    return dnormalDistanceRatiodp1,dnormalDistanceRatiodp2,dnormalDistanceRatiodtau2    
+    return dnormalDistanceRatiodp1,dnormalDistanceRatiodp2,dnormalDistanceRatiodtau2
+
+def self_contact(p1,p2,tau2):
+    p1 = np.array(p1)
+    p2 = np.array(p2)
+    if (np.all(p1 == p2)):
+        return 1e12
+    norm = scipy.linalg.norm(p1-p2)
+    normal_distance_ratio = normalDistanceRatio(p1,p2,tau2)
+    assert(normal_distance_ratio>=0) 
+    assert(normal_distance_ratio<1)
+    if (normal_distance_ratio > 0):
+        return norm/normal_distance_ratio
+    else:
+        return 1e12
   
 # Given 2 points p1 and p2 and tangent at p2, compute self-contact function [(26) in Walker]
 def self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight):
@@ -1188,3 +1256,59 @@ def self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius,exp_weight):
             -self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight)*dScdtau2/exp_weight
     else:
         return 0, 0, 0
+    
+def self_intersect(x,y):
+    assert(isinstance(x,(list,np.ndarray)))
+    assert(isinstance(y,(list,np.ndarray)))
+    assert(x.ndim==1 and y.ndim==1 and len(x)==len(y))
+
+    # Make sure there are no repeated points
+    points = (np.array([x,y]).T).tolist()
+    assert (not any(points.count(z) > 1 for z in points))
+    # Repeat last point
+    points.append(points[0])
+  
+    npoints = len(points)
+    for i in range(npoints-1):
+        p1 = points[i]
+        p2 = points[i+1]
+        # Compare with all line segments that do not contain x[i] or x[i+1]
+        for j in range(i+2,npoints-1):
+            p3 = points[j]
+            p4 = points[j+1]
+            # Ignore if any points are in common with p1
+            if (p1==p3 or p2==p3 or p1==p4 or p2==p4):
+                continue
+            if (segment_intersect(p1,p2,p3,p4)):
+                print(i)
+                print(j)
+                return True
+    return False
+
+# Check if segment defined by (p1, p2) intersections segment defined by (p2, p4)
+def segment_intersect(p1,p2,p3,p4):
+  
+    assert(isinstance(p1,(list,np.ndarray)))
+    assert(len(p1)==2 and np.array(p1).ndim==1)
+    assert(isinstance(p2,(list,np.ndarray)))
+    assert(len(p2)==2 and np.array(p2).ndim==1)
+    assert(isinstance(p3,(list,np.ndarray)))
+    assert(len(p3)==2 and np.array(p3).ndim==1)
+    assert(isinstance(p4,(list,np.ndarray)))
+    assert(len(p4)==2 and np.array(p4).ndim==1)
+  
+    l1 = np.array(p3) - np.array(p1)
+    l2 = np.array(p2) - np.array(p1)
+    l3 = np.array(p4) - np.array(p1)
+  
+    # Check for intersection of bounding box 
+    b1 = [min(p1[0],p2[0]),min(p1[1],p2[1])]
+    b2 = [max(p1[0],p2[0]),max(p1[1],p2[1])]
+    b3 = [min(p3[0],p4[0]),min(p3[1],p4[1])]
+    b4 = [max(p3[0],p4[0]),max(p3[1],p4[1])]
+  
+    boundingBoxIntersect = ((b1[0] <= b4[0]) and (b2[0] >= b3[0]) 
+        and (b1[1] <= b4[1]) and (b2[1] >= b3[1]))
+    return (((l1[0]*l2[1]-l1[1]*l2[0])*(l3[0]*l2[1]-l3[1]*l2[0]) < 0) and 
+        boundingBoxIntersect)
+
