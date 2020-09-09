@@ -4,6 +4,7 @@ Author: Caoxiang Zhu (caoxiangzhu@gmail.com)
 """
 from __future__ import print_function, absolute_import, division
 import numpy as np
+import vmec
 
 run_modes =  {'all': 63,
               'input': 35,  # STELLOPT uses 35; V3FIT uses 7
