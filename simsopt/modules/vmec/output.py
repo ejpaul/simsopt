@@ -301,7 +301,7 @@ class VmecOutput:
         if (not callable(weight)):
             raise TypeError('weight must be a function')
         iota_target_function = 0.5 * np.sum(weight(self.s_half) * \
-                    (self.iota - target)**2) * self.ds * self.psi[-1] * self.sign_jac
+                    (self.iota - target)**2) * self.ds 
         return iota_target_function        
     
     def evaluate_iota_prime_objective(self, weight):
@@ -340,7 +340,7 @@ class VmecOutput:
         if (not callable(weight)):
             raise TypeError('weight must be a function')
         well_function = np.sum(weight(self.s_half) * self.vp) * \
-            self.ds * 4 * np.pi * np.pi
+            self.ds * 4 * np.pi * np.pi /(self.psi[-1])
         return well_function
     
     def evaluate_modB_objective(self, isurf = None):
