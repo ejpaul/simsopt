@@ -16,7 +16,7 @@ PYTHON   = python
 #=======================================================================
 
 ifeq ($(F90),gfortran)
-	FPP      = $(FC) -E
+	FPP      = $(FC) -E -cpp -fPIC
 	FPP_F90FLAGS = -x f95-cpp-input -fPIC
 	F90FLAGS = $(FLAGS_R)
     FCOMP    = $(MPI_COMPILE) #gfortran
@@ -24,7 +24,7 @@ endif
 
 
 CFLAGS = -fPIC #     ==> universal for ifort, gfortran, pgi
-
+FPP_F90FLAGS = -fPIC
 #=======================================================================
 #=======================================================================
 
