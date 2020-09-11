@@ -1,9 +1,9 @@
 import numpy as np
 import numba
-from numba import jit
+from numba import jit, prange
 from scanf import scanf
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def cosine_IFT(xm,xn,nfp,theta,zeta,fmn):
     """
     Performs cosine inverse fourier transform
@@ -32,7 +32,7 @@ def cosine_IFT(xm,xn,nfp,theta,zeta,fmn):
         f += fmn[im]*cos_angle
     return f
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def sine_IFT(xm,xn,nfp,theta,zeta,fmn):
     """
     Performs sine inverse fourier transform
@@ -61,7 +61,7 @@ def sine_IFT(xm,xn,nfp,theta,zeta,fmn):
         f += fmn[im]*sin_angle
     return f
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def proximity_surface(R,Z,tR,tz,dldtheta,min_curvature_radius,exp_weight,\
                       derivatives=False):
     """
@@ -91,7 +91,7 @@ def proximity_surface(R,Z,tR,tz,dldtheta,min_curvature_radius,exp_weight,\
                 min_curvature_radius=min_curvature_radius,exp_weight=exp_weight)
     return Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def global_curvature_surface(R,Z,tR,tz):
     nzeta = len(R[:,0])
     ntheta = len(R[0,:])
@@ -111,7 +111,7 @@ def global_curvature_surface(R,Z,tR,tz):
     return global_curvature_radius
 
 #TODO : test for correct sizes
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def point_in_polygon(R, Z, R0, Z0):
     """
     Determines if point on the axis (R0,Z0) lies within boundary defined by
@@ -139,7 +139,7 @@ def point_in_polygon(R, Z, R0, Z0):
     return oddNodes
 
 # Note that xn is not multiplied by nfp
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def init_modes(mmax,nmax):
     mnmax = (nmax+1) + (2*nmax+1)*mmax
     xm = np.zeros(mnmax)
@@ -179,7 +179,7 @@ def min_max_indices_2d(varName,inputFilename):
                 index_2.append(out[1])
     return min(index_1), min(index_2), max(index_1), max(index_2)
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def proximity_slice(R,Z,tR,tZ,dldtheta,min_curvature_radius,exp_weight,derivatives=False):
 #     assert(np.all((np.shape(R) == np.shape(Z))) and \
 #            np.all((np.shape(R) == np.shape(tR))) and \
@@ -214,7 +214,7 @@ def proximity_slice(R,Z,tR,tZ,dldtheta,min_curvature_radius,exp_weight,derivativ
             dQpdp1[itheta,:] = np.dot(dScdp1.T,dldtheta)
     return Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def proximity_derivatives_func(theta,zeta,nfp,xm_sensitivity,xn_sensitivity,\
                                   dQpdp1,dQpdp2,dQpdtau2,dQpdlprime,\
                                   dRdtheta,dZdtheta,lprime):
@@ -255,7 +255,7 @@ def proximity_derivatives_func(theta,zeta,nfp,xm_sensitivity,xn_sensitivity,\
     return dQpdrmnc, dQpdzmns
 
     
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def self_contact(p1,p2,tau2):
     if (np.all(p1 == p2)):
         return 1e12
@@ -266,12 +266,12 @@ def self_contact(p1,p2,tau2):
     else:
         return 1e12
     
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def normalDistanceRatio(p1,p2,tau2):
     norm = np.linalg.norm(p1-p2)
     return 1-((p2-p1).dot(tau2))**2/norm**2
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def normalDistanceRatio_gradient(p1,p2,tau2):
     norm = np.linalg.norm(p1-p2)
     dnormalDistanceRatiodp1 = -2*((p2-p1).dot(tau2)/norm)*(-tau2/norm + ((p2-p1).dot(tau2)/norm**3)*(p2-p1))
@@ -280,7 +280,7 @@ def normalDistanceRatio_gradient(p1,p2,tau2):
     return dnormalDistanceRatiodp1,dnormalDistanceRatiodp2,dnormalDistanceRatiodtau2
   
 # Given 2 points p1 and p2 and tangent at p2, compute self-contact function [(26) in Walker]
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight):
     norm = np.linalg.norm(p1-p2)
     normal_distance_ratio = normalDistanceRatio(p1,p2,tau2)
@@ -289,7 +289,7 @@ def self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight):
     else:
         return 0.
 
-@jit(nopython=True)
+@jit(nopython=True,cache=True)
 def self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius,exp_weight):
     norm = np.linalg.norm(p1-p2)
     N = normalDistanceRatio(p1,p2,tau2) # norm distance ratio squared
@@ -305,33 +305,40 @@ def self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius,exp_weight):
     else:
         return np.array([0.,0.]), np.array([0.,0.]), np.array([0.,0.])
     
-# @jit(nopython=True)
+@jit(nopython=True,cache=True)
 def self_intersect(x,y):
     assert(x.ndim==1 and y.ndim==1 and len(x)==len(y))
     # Make sure there are no repeated points
-    points = (np.array([x,y]).T).tolist()
-    assert (not any(points.count(z) > 1 for z in points))
+#     points = (np.array([x,y]).T).tolist()
+#     assert (not any(points.count(z) > 1 for z in points))
     # Repeat last point
-    points.append(points[0])
+#     points.append(points[0])
+    x = np.append(x,x[0])
+    y = np.append(y,y[0])
   
-    npoints = len(points)
+    npoints = len(x)
     for i in range(npoints-1):
-        p1 = points[i]
-        p2 = points[i+1]
+#         p1 = points[i]
+#         p2 = points[i+1]
+        p1 = [x[i],y[i]]
+        p2 = [x[i+1],y[i+1]]
         # Compare with all line segments that do not contain x[i] or x[i+1]
         for j in range(i+2,npoints-1):
-            p3 = points[j]
-            p4 = points[j+1]
+            p3 = [x[j],y[j]]
+            p4 = [x[j+1],y[j+1]]
+#             p3 = points[j]
+#             p4 = points[j+1]
             # Ignore if any points are in common with p1
             if (p1==p3 or p2==p3 or p1==p4 or p2==p4):
                 continue
-            if (segment_intersect(p1,p2,p3,p4)):
+            if (segment_intersect(np.array(p1),np.array(p2),np.array(p3),\
+                                  np.array(p4))):
                 print(i)
                 print(j)
                 return True
     return False
 
-# @jit(nopython=True)
+@jit(nopython=True,cache=True)
 def segment_intersect(p1,p2,p3,p4):
     """
     Check if segment defined by (p1, p2) intersections segment defined by (p2, p4)
@@ -355,3 +362,11 @@ def segment_intersect(p1,p2,p3,p4):
     return (((l1[0]*l2[1]-l1[1]*l2[0])*(l3[0]*l2[1]-l3[1]*l2[0]) < 0) and 
         boundingBoxIntersect)
 
+@jit(nopython=True,cache=True)
+def surface_intersect(R,Z):  
+    nzeta = len(R[:,0])
+    for izeta in range(nzeta):
+        if (self_intersect(R[izeta,:],Z[izeta,:])):
+            return izeta
+    return -1
+        
