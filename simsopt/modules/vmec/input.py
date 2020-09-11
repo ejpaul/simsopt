@@ -14,7 +14,7 @@ import numpy as np
 from simsopt.modules.vmec.surface_utils import point_in_polygon, init_modes, \
     min_max_indices_2d, proximity_slice, self_contact, self_intersect, \
     global_curvature_surface, proximity_surface, proximity_derivatives_func, \
-    cosine_IFT, sine_IFT
+    cosine_IFT, sine_IFT, surface_intersect
 
 __author__ = "Elizabeth Paul, Bharat Medasani"
 __copyright__ = ""
@@ -738,12 +738,19 @@ class VmecInput:
         [X,Y,Z,R] = self.position(theta=theta,zeta=zeta)
         if np.any(R<0):
             return True
+        # Compute izeta of intersection
+        izeta = boundary_intersect(R,Z)
+        if (izeta == -1):
+            return False
+        else:
+            print('Intersection at izeta = '+str(izeta))
+            return True
         # Iterate over cross-sections
-        for izeta in range(nzeta):
-            if (self_intersect(R[izeta,:],Z[izeta,:])):
-                plt.plot(R[izeta,:],Z[izeta,:],marker='*')
-                print(izeta)
-                return True
+#         for izeta in range(nzeta):
+#             if (self_intersect(R[izeta,:],Z[izeta,:])):
+#                 plt.plot(R[izeta,:],Z[izeta,:],marker='*')
+#                 print(izeta)
+#                 return True
             
     def radius_derivatives(self, xm_sensitivity, xn_sensitivity, theta=None, 
                            zeta=None):
