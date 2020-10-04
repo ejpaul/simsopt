@@ -297,11 +297,15 @@ class VmecOutput:
             self.psi[-1] * self.sign_jac
         return iota_function
     
-    def evaluate_iota_target_objective(self, weight, target):
-        if (not callable(weight)):
-            raise TypeError('weight must be a function')
-        iota_target_function = 0.5 * np.sum(weight(self.s_half) * \
-                    (self.iota - target)**2) * self.ds 
+    def evaluate_iota_target_objective(self,iota_target=0.618034,\
+                                       weight_function=None):
+        # Default to constant function
+        if (weight_function is None):
+            weight_function = lambda s : 1
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        iota_target_function = 0.5 * np.sum(weight_function(self.s_half) * \
+                    (self.iota - iota_target)**2) * self.ds 
         return iota_target_function        
     
     def evaluate_iota_prime_objective(self, weight):
