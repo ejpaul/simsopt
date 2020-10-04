@@ -62,7 +62,7 @@ def sine_IFT(xm,xn,nfp,theta,zeta,fmn):
     return f
 
 @jit(nopython=True,cache=True)
-def proximity_surface(R,Z,tR,tz,dldtheta,min_curvature_radius,exp_weight,\
+def proximity_surface(R,Z,tR,tz,dldtheta,min_curvature_radius=0.2,exp_weight=0.01,\
                       derivatives=False):
     """
     Compute proximity function for curves defined as 
@@ -180,7 +180,8 @@ def min_max_indices_2d(varName,inputFilename):
     return min(index_1), min(index_2), max(index_1), max(index_2)
 
 @jit(nopython=True,cache=True)
-def proximity_slice(R,Z,tR,tZ,dldtheta,min_curvature_radius,exp_weight,derivatives=False):
+def proximity_slice(R,Z,tR,tZ,dldtheta,min_curvature_radius=0.2,exp_weight=0.01,\
+                    derivatives=False):
 #     assert(np.all((np.shape(R) == np.shape(Z))) and \
 #            np.all((np.shape(R) == np.shape(tR))) and \
 #            np.all((np.shape(R) == np.shape(tZ))) and \
@@ -281,7 +282,7 @@ def normalDistanceRatio_gradient(p1,p2,tau2):
   
 # Given 2 points p1 and p2 and tangent at p2, compute self-contact function [(26) in Walker]
 @jit(nopython=True,cache=True)
-def self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight):
+def self_contact_exp(p1,p2,tau2,min_curvature_radius=0.2,exp_weight=0.1):
     norm = np.linalg.norm(p1-p2)
     normal_distance_ratio = normalDistanceRatio(p1,p2,tau2)
     if (normal_distance_ratio > 0):
@@ -290,7 +291,7 @@ def self_contact_exp(p1,p2,tau2,min_curvature_radius,exp_weight):
         return 0.
 
 @jit(nopython=True,cache=True)
-def self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius,exp_weight):
+def self_contact_exp_gradient(p1,p2,tau2,min_curvature_radius=0.2,exp_weight=0.01):
     norm = np.linalg.norm(p1-p2)
     N = normalDistanceRatio(p1,p2,tau2) # norm distance ratio squared
     [dnormalDistanceRatiodp1,dnormalDistanceRatiodp2,dnormalDistanceRatiodtau2] \
