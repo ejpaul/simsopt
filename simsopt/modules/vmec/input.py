@@ -73,8 +73,6 @@ class VmecInput:
         self.update_modes(nml.get("mpol"), nml.get("ntor"))
 
         self.update_grids(ntheta, nzeta)
-        self.min_curvature_radius = 0.1
-        self.exp_weight = 0.01
         self.animec = False
 
     def update_namelist(self):
@@ -186,10 +184,10 @@ class VmecInput:
                                      int(self.xm[imn] - mmin_rbc)]
             if (((self.xn[imn] - nmin_zbs) < dim1_zbs) and \
                     ((self.xm[imn] - mmin_zbs) < dim2_zbs) and \
-                    ((self.xn[imn] - nmin_rbc) > -1) and \
-                    ((self.xm[imn] - mmin_rbc) > -1)):
+                    ((self.xn[imn] - nmin_zbs) > -1) and \
+                    ((self.xm[imn] - mmin_zbs) > -1)):
                 zbs[imn] = zbs_array[int(self.xn[imn] - nmin_zbs), \
-                                     int(self.xm[imn]-mmin_zbs)]
+                                     int(self.xm[imn] - mmin_zbs)]
 
         return rbc, zbs
 
@@ -739,7 +737,7 @@ class VmecInput:
         if np.any(R<0):
             return True
         # Compute izeta of intersection
-        izeta = boundary_intersect(R,Z)
+        izeta = surface_intersect(R,Z)
         if (izeta == -1):
             return False
         else:
@@ -1032,8 +1030,53 @@ class VmecInput:
 #                         this_global_curvature[ithetap] = 1e12
 #                 global_curvature_radius[izeta,itheta] = np.min(this_global_curvature)
         return global_curvature_radius
+
+    def summed_radius_constraint(self,R_min=0.2,exp_weight=0.01,ntheta=None,\
+                                 nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+        [X, Y, Z, R] = self.position(theta=theta,zeta=zeta)
+        normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
+        constraint_fun = np.exp(-(R-R_min)**2/exp_weight**2)
+        return np.sum(constraint_fun*normalized_jacobian)*dtheta*dzeta
     
-    def summed_proximity(self,ntheta=None,nzeta=None):
+    def summed_radius_constraint_derivatives(self,xm_sensitivity,xn_sensitivity,\
+                                    R_min=0.2,exp_weight=0.01,ntheta=None,nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+        [X, Y, Z, R] = self.position(theta=theta,zeta=zeta)
+        normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
+        [dnormalized_jacobiandrmnc, dnormalized_jacobiandzmns] = \
+            self.normalized_jacobian_derivatives(xm_sensitivity,xn_sensitivity,\
+                                                  theta=theta,zeta=zeta)
+        [dRdrmnc, dRdzmns] = self.radius_derivatives(xm_sensitivity, \
+                                xn_sensitivity, theta=None, zeta=None)
+        constraint_fun = np.exp(-(R-R_min)**2/exp_weight**2)
+        dconstraintdrmnc = -(2*(R[np.newaxis,:,:]-R_min)/exp_weight**2) \
+            * constraint_fun[np.newaxis,:,:] * dRdrmnc
+        dconstraintdzmns = -(2*(R[np.newaxis,:,:]-R_min)/exp_weight**2) \
+            * constraint_fun[np.newaxis,:,:] * dRdzmns
+        return np.sum(dconstraintdrmnc*normalized_jacobian[np.newaxis,:,:],axis=(1,2))*dtheta*dzeta \
+            +  np.sum(constraint_fun[np.newaxis,:,:]*dnormalized_jacobiandrmnc,axis=(1,2))*dtheta*dzeta,\
+            np.sum(dconstraintdzmns*normalized_jacobian[np.newaxis,:,:],axis=(1,2))*dtheta*dzeta \
+            +  np.sum(constraint_fun[np.newaxis,:,:]*dnormalized_jacobiandzmns,axis=(1,2))*dtheta*dzeta
+    
+    def summed_proximity(self,ntheta=None,nzeta=None,min_curvature_radius=0.2,
+                        exp_weight=0.01):
         """
         Constraint function integrated over the two angles
         """
@@ -1046,11 +1089,15 @@ class VmecInput:
             nzeta = self.nzeta
         else:            
             [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
-        this_proximity = self.proximity(ntheta=ntheta,nzeta=nzeta)
-        return np.sum(this_proximity)*dtheta*dzeta
+        this_proximity = self.proximity(ntheta=ntheta,nzeta=nzeta,\
+                        min_curvature_radius=min_curvature_radius,\
+                        exp_weight=exp_weight)
+        normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
+        return np.sum(this_proximity*normalized_jacobian)*dtheta*dzeta
   
     def summed_proximity_derivatives(self,xm_sensitivity,xn_sensitivity,\
-                                     ntheta=None,nzeta=None):
+                                     ntheta=None,nzeta=None,\
+                                     min_curvature_radius=0.2,exp_weight=0.01):
         if (ntheta == None or nzeta == None):
             theta = self.thetas_2d
             zeta = self.zetas_2d
@@ -1059,12 +1106,24 @@ class VmecInput:
         else:            
             [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
 
-        [dQpdrmnc, dQpdzmns] = self.proximity_derivatives(xm_sensitivity,\
-                                                    xn_sensitivity,ntheta,nzeta)
-        return np.sum(dQpdrmnc,axis=(0,2))*dtheta*dzeta, \
-               np.sum(dQpdzmns,axis=(0,2))*dtheta*dzeta
+        [dnormalized_jacobiandrmnc, dnormalized_jacobiandzmns] = \
+            self.normalized_jacobian_derivatives(xm_sensitivity,xn_sensitivity,
+                                                  theta=theta,zeta=zeta)
+        [dQpdrmnc, dQpdzmns] = self.proximity_derivatives(xm_sensitivity,
+                                 xn_sensitivity,ntheta=ntheta,nzeta=nzeta,
+                                 min_curvature_radius=min_curvature_radius,
+                                 exp_weight=exp_weight)
+        normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
+        this_proximity = self.proximity(ntheta=ntheta,nzeta=nzeta,\
+                                        min_curvature_radius=min_curvature_radius,
+                                        exp_weight=exp_weight)
+        return np.sum(dQpdrmnc*normalized_jacobian[:,np.newaxis,:],axis=(0,2))*dtheta*dzeta \
+            +  np.sum(this_proximity[np.newaxis,:,:]*dnormalized_jacobiandrmnc,axis=(1,2))*dtheta*dzeta, \
+               np.sum(dQpdzmns*normalized_jacobian[:,np.newaxis,:],axis=(0,2))*dtheta*dzeta \
+            +  np.sum(this_proximity[np.newaxis,:,:]*dnormalized_jacobiandzmns,axis=(1,2))*dtheta*dzeta
 
-    def proximity(self,derivatives=False,ntheta=None,nzeta=None):
+    def proximity(self,derivatives=False,ntheta=None,nzeta=None,\
+                  min_curvature_radius=0.2,exp_weight=0.01):
         if (ntheta == None or nzeta == None):
             theta = self.thetas_2d
             zeta = self.zetas_2d
@@ -1082,18 +1141,20 @@ class VmecInput:
         tz = dZdtheta/dldtheta
         if derivatives:
             [Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime] = \
-                proximity_surface(R,Z,tR,tz,dldtheta,self.min_curvature_radius,\
-                                  self.exp_weight,derivatives=True)
+                proximity_surface(R,Z,tR,tz,dldtheta,exp_weight=exp_weight,
+                     derivatives=True,min_curvature_radius=min_curvature_radius)
             return dtheta*Qp, dtheta*dQpdp1, dtheta*dQpdp2, dtheta*dQpdtau2,\
                    dtheta*dQpdlprime 
         else:
             [Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime] = \
-                proximity_surface(R,Z,tR,tz,dldtheta,self.min_curvature_radius,\
-                                  self.exp_weight,derivatives=False)
+                proximity_surface(R,Z,tR,tz,dldtheta,\
+                                  min_curvature_radius=min_curvature_radius,\
+                                  exp_weight=exp_weight,derivatives=False)
             return dtheta*Qp
 
     def proximity_derivatives(self,xm_sensitivity,xn_sensitivity,ntheta=None,\
-                              nzeta=None):
+                              nzeta=None,min_curvature_radius=0.2,\
+                              exp_weight=0.01):
         if (ntheta == None or nzeta == None):
             theta = self.thetas_2d
             zeta = self.zetas_2d
@@ -1103,7 +1164,9 @@ class VmecInput:
             [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
             
         [Qp, dQpdp1, dQpdp2, dQpdtau2, dQpdlprime] = \
-            self.proximity(derivatives=True,ntheta=ntheta,nzeta=nzeta)
+            self.proximity(derivatives=True,ntheta=ntheta,nzeta=nzeta,\
+                           min_curvature_radius=min_curvature_radius,\
+                           exp_weight=exp_weight)
         [dxdtheta, dxdzeta, dydtheta, dydzeta, dZdtheta, dZdzeta, dRdtheta, \
                 dRdzeta] = self.position_first_derivatives(theta=theta,zeta=zeta)
         lprime = np.sqrt(dRdtheta**2 + dZdtheta**2)
