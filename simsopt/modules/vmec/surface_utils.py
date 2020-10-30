@@ -2,6 +2,7 @@ import numpy as np
 import numba
 from numba import jit, prange
 from scanf import scanf
+import re
 
 @jit(nopython=True,cache=True)
 def cosine_IFT(xm,xn,nfp,theta,zeta,fmn):
@@ -160,6 +161,30 @@ def init_modes(mmax,nmax):
             index += 1
   
     return mnmax, xm, xn
+
+def read_bounary_harmonic(varName,inputFilename):
+    varName = varName.lower()
+    index_1 = []
+    index_2 = []
+    value = []
+    with open(inputFilename, 'r') as f:
+        inputFile = f.readlines()
+        for line in inputFile:
+            line3 = line.strip().lower()
+            line3 = re.sub(r"\s+", "", line3, flags=re.UNICODE)
+            # Ignore any comments
+            if (line3[0]=='!'):
+                continue
+            find_index = line3.find(varName+'(')
+            # Line contains desired varName
+            if (find_index > -1):
+                out = scanf(varName+"(%d,%d)=%f",line3[find_index::].lower(),\
+                            collapseWhitespace=True)
+                index_1.append(out[0])
+                index_2.append(out[1])
+                value.append(out[2])
+    return index_1, index_2, value
+    
 
 # Computes minimum indices of 2d array in Fortran namelist
 # @jit(nopython=True)
