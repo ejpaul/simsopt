@@ -3,6 +3,8 @@ import logging
 import numpy as np
 from scipy.io import netcdf
 import sys
+from matplotlib import pyplot as plt
+from simsopt.modules.vmec.surface_utils import cosine_IFT, sine_IFT
 
 class VmecOutput:
 
@@ -47,6 +49,8 @@ class VmecOutput:
         self.pres = f.variables["pres"][()]
         self.volume = f.variables["volume_p"][()]
         self.volavgB = f.variables["volavgB"][()]
+        self.raxis = f.variables["raxis_cc"][()]
+        self.zaxis = f.variables["zaxis_cs"][()]
         
         # Remove axis point from half grid quantities
         self.bmnc = np.delete(self.bmnc, 0, 0)
@@ -86,6 +90,39 @@ class VmecOutput:
         
         self.mu0 = 4*np.pi*1.0e-7
         
+    def flux_jacobian(self, isurf=-1,theta=None,zeta=None):
+        """
+        Computes jacobian of flux coordinate system on specified surface. 
+        
+        Args:
+            isurf (int): flux gridpoint for evaluation (optional)
+            theta (float array): poloidal grid for evaluation (optional)
+            zeta (float array): toroidal grid for evaluation (optional)
+            
+        Returns:
+            jac (float array): jacobian on grid in angles
+        """        
+        if (theta is None and zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+        elif (np.array(theta).shape != np.array(zeta).shape):
+            raise ValueError('Incorrect shape of theta and zeta in '
+                         'flux_jacobian')
+        if (isurf >= self.ns_half):
+            raise ValueError('Incorrect value of isurface in flux_jacobian.')
+        this_gmnc = self.gmnc[isurf,:]
+#         this_gmnc = np.array(self.gmnc[isurf,:],dtype='float')
+#         xm = np.array(self.xm_nyq,dtype='float')
+#         xn = np.array(self.xn_nyq,dtype='float')
+#         jac = cosine_IFT(xm,xn,1,theta,zeta,this_gmnc)
+        jac = np.zeros(np.shape(zeta))
+        for im in range(self.mnmax_nyq):
+            angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
+            cos_angle = np.cos(angle)
+            jac += this_gmnc[im] * cos_angle
+            
+        return jac
+
     def compute_modB(self, isurf = -1, theta = None, zeta = None, full = False):
         """
         Computes magnitude of magnetic field on specified surface.
@@ -115,6 +152,12 @@ class VmecOutput:
             if (isurf >= self.ns - 1):
                 raise ValueError('Incorrect value of isurface in compute_modB.')
             this_bmnc = 0.5 * (self.bmnc[isurf-1,:] + self.bmnc[isurf+1,:])
+            
+#         this_bmnc = np.array(this_bmnc,dtype='float')
+#         xm = np.array(self.xm_nyq,dtype='float')
+#         xn = np.array(self.xn_nyq,dtype='float')
+#         modB = cosine_IFT(xm,xn,1,theta,zeta,this_bmnc)
+
         modB = np.zeros(np.shape(zeta))
         for im in range(self.mnmax_nyq):
             angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
@@ -262,6 +305,13 @@ class VmecOutput:
         elif (np.array(theta).shape != np.array(zeta).shape):
             raise ValueEror('Incorrect shape of theta and zeta in '
                          'compute_position')
+                          
+#         this_rmnc = np.array(this_rmnc,dtype='float')
+#         this_zmns = np.array(this_zmns,dtype='float')
+#         xm = np.array(self.xm,dtype='float')
+#         xn = np.array(self.xn,dtype='float')
+#         R = cosine_IFT(xm,xn,1,theta,zeta,this_rmnc)
+#         Z = sine_IFT(xm,xn,1,theta,zeta,this_zmns)
         if (isinstance(theta,(list,np.ndarray))):
             R = np.zeros(np.shape(theta))
             Z = np.zeros(np.shape(zeta))
@@ -277,13 +327,48 @@ class VmecOutput:
         X = R * np.cos(zeta)
         Y = R * np.sin(zeta)
         return X, Y, Z, R
+    
+    def evaluate_ripple_objective(self, weight_function):
+        """
+        Computes magnetic ripple objective function
+            
+        Args:
+            weight_function (function): returns weight as a function of normalized
+                toroidal flux
+            
+        Returns:
+            ripple_function (float): magnetic ripple objective function
+            
+        """
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        Bbar = 0
+        normalization = 0
+        for isurf in range(0,self.ns_half):
+            this_B = self.compute_modB(isurf=isurf)
+            this_J = self.flux_jacobian(isurf=isurf)
+            Bbar += weight_function(self.s_half[isurf])*np.abs(np.sum(this_B*this_J))
+            normalization += weight_function(self.s_half[isurf])*np.abs(np.sum(this_J))
+        Bbar = Bbar/normalization
+        ripple_axis = 0
+        volume = 0
+        for isurf in range(0,self.ns_half):
+            this_B = self.compute_modB(isurf=isurf)
+            this_J = self.flux_jacobian(isurf = isurf)
+            ripple_axis += weight_function(self.s_half[isurf]) * \
+                np.abs(np.sum(this_J*(this_B-Bbar)*(this_B-Bbar)))
+            volume += np.abs(np.sum(this_J))
+        ripple_axis = ripple_axis*0.5*self.nfp*self.dtheta*self.dzeta*self.ds
+        volume = volume*self.nfp*self.dtheta*self.dzeta*self.ds
+        
+        return ripple_axis
 
-    def evaluate_iota_objective(self, weight):
+    def evaluate_iota_objective(self, weight_function):
         """
         Computes integrated rotational transform objective function
             
         Args:
-            weight (function): returns weight as a function of normalized
+            weight_function (function): returns weight as a function of normalized
                 toroidal flux
             
         Returns:
@@ -291,9 +376,9 @@ class VmecOutput:
                 weight function on half grid
             
         """
-        if (not callable(weight)):
-            raise TypeError('weight must be a function')
-        iota_function = np.sum(weight(self.s_half) * self.iota) * self.ds * \
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        iota_function = np.sum(weight_function(self.s_half) * self.iota) * self.ds * \
             self.psi[-1] * self.sign_jac
         return iota_function
     
@@ -308,7 +393,7 @@ class VmecOutput:
                     (self.iota - iota_target)**2) * self.ds 
         return iota_target_function        
     
-    def evaluate_iota_prime_objective(self, weight):
+    def evaluate_iota_prime_objective(self, weight_function):
         """
         Computes integrated rotational transform objective function
             
@@ -321,30 +406,30 @@ class VmecOutput:
                 weight function on half grid
             
         """
-        if (not callable(weight)):
+        if (not callable(weight_function)):
             raise TypeError('weight must be a function')
         self.iota_prime = (self.iotaf[1::]-self.iotaf[0:-1])/(self.ds)
-        iota_prime_function = 0.5 * np.sum(weight(self.s_half) * self.iota_prime \
+        iota_prime_function = 0.5 * np.sum(weight_function(self.s_half) * self.iota_prime \
                                * self.iota_prime) * self.ds 
         return iota_prime_function
   
-    def evaluate_well_objective(self, weight):
+    def evaluate_well_objective(self, weight_function):
         """
         Computes integrated differential volume with weight function
             
         Args:
-            weight (function): returns weight as a function of normalized
+            weight_function (function): returns weight as a function of normalized
                 toroidal flux
             
         Returns:
-            well_function (float): differential volume integrated against weight
-            function on half grid
+            well_function (float): differential volume integrated against 
+                weight_function on half grid
             
         """
-        if (not callable(weight)):
-            raise TypeError('weight must be a function')
-        well_function = np.sum(weight(self.s_half) * self.vp) * \
-            self.ds * 4 * np.pi * np.pi /(self.psi[-1])
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        well_function = np.sum(weight_function(self.s_half) * self.vp) * \
+            self.ds * 4 * np.pi * np.pi / (self.psi[-1])
         return well_function
     
     def evaluate_modB_objective(self, isurf = None):
@@ -454,9 +539,21 @@ class VmecOutput:
         elif (np.array(theta).shape != np.array(zeta).shape):
             raise ValueError('Incorrect shape of theta and zeta in '
                          'position_first_derivatives')
+          
+#         this_rmnc = np.array(self.rmnc[isurf,:],dtype='float')
+#         this_zmns = np.array(self.zmns[isurf,:],dtype='float')
+#         xm = np.array(self.xm,dtype='float')
+#         xn = np.array(self.xn,dtype='float')
+
+#         R = cosine_IFT(xm,xn,1,theta,zeta,this_rmnc)
+#         dRdtheta = sine_IFT(xm,xn,1,theta,zeta,-xm*this_rmnc)
+#         dzdtheta = cosine_IFT(xm,xn,1,theta,zeta,xm*this_zmns)
+#         dRdzeta = sine_IFT(xm,xn,1,theta,zeta,xn*this_rmnc)
+#         dzdzeta = cosine_IFT(xm,xn,1,theta,zeta,-xn*this_zmns)
 
         this_rmnc = self.rmnc[isurf,:]
-        this_zmns = self.zmns[isurf,:] 
+        this_zmns = self.zmns[isurf,:]
+
         dRdtheta = np.zeros(np.shape(theta))
         dzdtheta = np.zeros(np.shape(theta))
         dRdzeta = np.zeros(np.shape(theta))
@@ -514,6 +611,23 @@ class VmecOutput:
             logger.error('Incorrect shape of theta and zeta in '
                          'position_first_derivatives')
             sys.exit(0)
+        
+#         this_rmnc = np.array(this_rmnc,dtype='float')
+#         this_zmns = np.array(this_zmns,dtype='float')
+#         xm = np.array(self.xm,dtype='float')
+#         xn = np.array(self.xn,dtype='float')
+#         d2Rdtheta2 = cosine_IFT(xm,xn,1,theta,zeta,-xm*xm*this_rmnc)
+#         d2Rdzeta2 = cosine_IFT(xm,xn,1,theta,zeta,-xn*xn*this_rmnc)
+#         d2Zdtheta2 = sine_IFT(xm,xn,1,theta,zeta,-xm*xm*this_zmns)
+#         d2Zdzeta2 = sine_IFT(xm,xn,1,theta,zeta,-xn*xn*this_zmns)
+#         d2Rdthetadzeta = cosine_IFT(xm,xn,1,theta,zeta,xn*xm*this_rmnc)
+#         d2Zdthetadzeta = sine_IFT(xm,xn,1,theta,zeta,xn*xm*this_zmns)
+        
+#         R = cosine_IFT(xm,xn,1,theta,zeta,this_rmnc)
+#         dRdtheta = sine_IFT(xm,xn,1,theta,zeta,-xm*this_rmnc)
+#         dZdtheta = cosine_IFT(xm,xn,1,theta,zeta,xm*this_zmns)
+#         dRdzeta = sine_IFT(xm,xn,1,theta,zeta,xn*this_rmnc)
+#         dZdzeta = cosine_IFT(xm,xn,1,theta,zeta,-xn*this_zmns)
        
         d2Rdtheta2 = np.zeros(np.shape(theta))
         d2Rdzeta2 = np.zeros(np.shape(theta))
