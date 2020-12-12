@@ -104,7 +104,7 @@ def global_curvature_surface(R,Z,tR,tz):
             for ithetap in range(ntheta):
                 p2 = np.array([R[izeta,ithetap],Z[izeta,ithetap]])
                 t2 = np.array([tR[izeta,ithetap],tz[izeta,ithetap]])
-                if (np.all(p1 != p2)):
+                if (np.any(p1 != p2)):
                     this_global_curvature[ithetap] = self_contact(p1,p2,t2)
                 else:
                     this_global_curvature[ithetap] = 1e12
