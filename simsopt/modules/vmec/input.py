@@ -69,6 +69,7 @@ class VmecInput:
         self.am_aux_f = nml.get("am_aux_f")
         self.am_aux_s = nml.get("am_aux_s")
         self.pmass_type = nml.get("pmass_type")
+        self.ncurr = nml.get("ncurr")
         
         self.update_modes(nml.get("mpol"), nml.get("ntor"))
 
@@ -399,9 +400,9 @@ class VmecInput:
             raise ValueError(
                 'Error! Incorrect dimensions for theta and zeta in position.')
       
-        R = cosine_IFT(self.xm,self.xn,float(self.nfp),theta,zeta,self.rbc)
+        R = cosine_IFT(self.xm,self.xn,float(self.nfp),theta,zeta,self.rbc)        
         Z = sine_IFT(self.xm,self.xn,float(self.nfp),theta,zeta,self.zbs)
-
+        
         X = R * np.cos(zeta)
         Y = R * np.sin(zeta)
         return X, Y, Z, R
@@ -489,7 +490,8 @@ class VmecInput:
         d2xdthetadzeta = d2Rdthetadzeta * np.cos(zeta) - dRdtheta * np.sin(zeta)
         d2ydthetadzeta = d2Rdthetadzeta * np.sin(zeta) + dRdtheta * np.cos(zeta)
         return d2xdtheta2, d2xdzeta2, d2xdthetadzeta, d2ydtheta2, d2ydzeta2, \
-                d2ydthetadzeta, d2Zdtheta2, d2Zdzeta2, d2Zdthetadzeta
+                d2ydthetadzeta, d2Zdtheta2, d2Zdzeta2, d2Zdthetadzeta, \
+               d2Rdtheta2, d2Rdzeta2, d2Rdthetadzeta
     
     def position_second_derivatives_surface(self, xm_sensitivity, xn_sensitivity, \
                                             theta=None, zeta=None):
@@ -587,7 +589,8 @@ class VmecInput:
         [dXdtheta, dXdzeta, dYdtheta, dYdzeta, dZdtheta, dZdzeta, dRdtheta, \
                 dRdzeta] = self.position_first_derivatives(theta, zeta)
         [d2Xdtheta2, d2Xdzeta2, d2Xdthetadzeta, d2Ydtheta2, d2Ydzeta2, \
-                d2Ydthetadzeta, d2Zdtheta2, d2Zdzeta2, d2Zdthetadzeta] = \
+                d2Ydthetadzeta, d2Zdtheta2, d2Zdzeta2, d2Zdthetadzeta, \
+                d2Rdtheta2, d2Rdzeta2, d2Rdthetadzeta] = \
                 self.position_second_derivatives(theta, zeta)
         norm_normal = self.jacobian(theta=theta,zeta=zeta)
         [Nx, Ny, Nz] = self.normal(theta=theta,zeta=zeta)
@@ -639,7 +642,8 @@ class VmecInput:
         [dXdtheta, dXdzeta, dYdtheta, dYdzeta, dZdtheta, dZdzeta, dRdtheta, \
                 dRdzeta] = self.position_first_derivatives(theta, zeta)
         [d2Xdtheta2, d2Xdzeta2, d2Xdthetadzeta, d2Ydtheta2, d2Ydzeta2, \
-                d2Ydthetadzeta, d2Zdtheta2, d2Zdzeta2, d2Zdthetadzeta] = \
+                d2Ydthetadzeta, d2Zdtheta2, d2Zdzeta2, d2Zdthetadzeta, \
+                d2Rdtheta2, d2Rdzeta2, d2Rdthetadzeta] = \
                 self.position_second_derivatives(theta, zeta)
         [d2Rdthetadrmnc, d2Xdthetadrmnc, d2Ydthetadrmnc, d2Zdthetadzmns, \
             d2Rdzetadrmnc, d2Xdzetadrmnc, d2Ydzetadrmnc, d2Zdzetadzmns] = \
@@ -726,6 +730,59 @@ class VmecInput:
         return dHdrmnc, dHdzmns, dKdrmnc, dKdzmns, dkappa1drmnc, dkappa1dzmns, \
             dkappa2drmnc, dkappa2dzmns
     
+    def surface_curvature_metric_integrated(self, ntheta=None, nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+        [H, K, kappa1, kappa2] = self.surface_curvature(theta=theta,zeta=zeta)
+        normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
+        metric1 = 0.5 * np.sum(kappa1**2 * normalized_jacobian) * dtheta * dzeta
+        metric2 = 0.5 * np.sum(kappa2**2 * normalized_jacobian) * dtheta * dzeta
+        
+        return metric1, metric2
+    
+    def surface_curvature_metric_integrated_derivatives(self, xm_sensitivity, \
+                                     xn_sensitivity, ntheta=None, nzeta=None):
+        if (ntheta == None or nzeta == None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+            dtheta = self.dtheta
+            dzeta = self.dzeta
+            ntheta = self.ntheta
+            nzeta = self.nzeta
+        else:            
+            [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
+        [H, K, kappa1, kappa2] = self.surface_curvature(theta=theta,zeta=zeta)        
+        normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
+        [dnormalized_jacobiandrmnc, dnormalized_jacobiandzmns] = \
+            self.normalized_jacobian_derivatives(xm_sensitivity,xn_sensitivity,\
+                                                  theta=theta,zeta=zeta)
+        [dHdrmnc, dHdzmns, dKdrmnc, dKdzmns, dkappa1drmnc, dkappa1dzmns, \
+            dkappa2drmnc, dkappa2dzmns] \
+            = self.surface_curvature_derivatives(xm_sensitivity,xn_sensitivity,\
+                                                theta=theta,zeta=zeta)
+
+        kappa1 = kappa1[np.newaxis,:,:]
+        kappa2 = kappa2[np.newaxis,:,:]
+        normalize_jacobian = normalized_jacobian[np.newaxis,:,:]
+
+        dmetric1drmnc = dtheta * dzeta * np.sum(dkappa1drmnc*kappa1*normalized_jacobian \
+                              + 0.5*kappa1**2*dnormalized_jacobiandrmnc,axis=(1,2))
+        dmetric1dzmns = dtheta * dzeta * np.sum(dkappa1dzmns*kappa1*normalized_jacobian \
+                              + 0.5*kappa1**2*dnormalized_jacobiandzmns,axis=(1,2))
+        dmetric2drmnc = dtheta * dzeta * np.sum(dkappa2drmnc*kappa2*normalized_jacobian \
+                              + 0.5*kappa2**2*dnormalized_jacobiandrmnc,axis=(1,2))
+        dmetric2dzmns = dtheta * dzeta * np.sum(dkappa2dzmns*kappa2*normalized_jacobian \
+                              + 0.5*kappa2**2*dnormalized_jacobiandzmns,axis=(1,2))    
+                
+        return dmetric1drmnc, dmetric1dzmns, dmetric2drmnc, dmetric2dzmns
+        
     def surface_curvature_metric(self, ntheta=None, nzeta=None, max_curvature=30,
                                 exp_weight=0.01):
         if (ntheta == None or nzeta == None):
@@ -739,10 +796,12 @@ class VmecInput:
             [theta, zeta, dtheta, dzeta] = self.init_grid(ntheta,nzeta)
         [H, K, kappa1, kappa2] = self.surface_curvature(theta=theta,zeta=zeta)
         normalized_jacobian = self.normalized_jacobian(theta=theta,zeta=zeta)
-        
-        return np.sum((np.exp((np.abs(kappa1)-max_curvature)/exp_weight) \
-            + np.exp((np.abs(kappa2)-max_curvature)/exp_weight))*normalized_jacobian) \
+        metric = np.sum((np.exp((kappa1**2-max_curvature**2)/exp_weight**2) \
+            + np.exp((kappa2**2-max_curvature**2)/exp_weight**2))*normalized_jacobian) \
             * dtheta * dzeta
+        if (np.isinf(metric)):
+            metric = 1e12
+        return metric
     
     def surface_curvature_metric_derivatives(self, xm_sensitivity, xn_sensitivity, \
                                     ntheta=None, nzeta=None, max_curvature=30,
@@ -770,20 +829,28 @@ class VmecInput:
         kappa1 = kappa1[np.newaxis,:,:]
         kappa2 = kappa2[np.newaxis,:,:]
         normalize_jacobian = normalized_jacobian[np.newaxis,:,:]
-        dmetricdrmnc = np.sum((np.exp((np.abs(kappa1)-max_curvature)/exp_weight) \
-            + np.exp((np.abs(kappa2)-max_curvature)/exp_weight))*dnormalized_jacobiandrmnc \
-            + (np.exp((np.abs(kappa1)-max_curvature)/exp_weight) \
-            * np.sign(kappa1)*dkappa1drmnc/exp_weight + 
-              np.exp((np.abs(kappa2)-max_curvature)/exp_weight) \
-            * np.sign(kappa2)*dkappa2drmnc/exp_weight)*normalized_jacobian,axis=(1,2)) \
+        dmetricdrmnc = np.sum((np.exp((kappa1**2-max_curvature**2)/exp_weight**2) \
+            + np.exp((kappa2**2-max_curvature**2)/exp_weight**2))*dnormalized_jacobiandrmnc \
+            + (np.exp((kappa1**2-max_curvature**2)/exp_weight**2) \
+            * 2*kappa1*dkappa1drmnc/exp_weight**2 + 
+              np.exp((kappa2**2-max_curvature**2)/exp_weight**2) \
+            * 2*kappa2*dkappa2drmnc/exp_weight**2)*normalized_jacobian,axis=(1,2)) \
             * dtheta * dzeta
-        dmetricdzmns = np.sum((np.exp((np.abs(kappa1)-max_curvature)/exp_weight) \
-            + np.exp((np.abs(kappa2)-max_curvature)/exp_weight))*dnormalized_jacobiandzmns \
-            + (np.exp((np.abs(kappa1)-max_curvature)/exp_weight) \
-            * np.sign(kappa1)*dkappa1dzmns/exp_weight + 
-              np.exp((np.abs(kappa2)-max_curvature)/exp_weight) \
-            * np.sign(kappa2)*dkappa2dzmns/exp_weight)*normalized_jacobian,axis=(1,2)) \
+        dmetricdzmns = np.sum((np.exp((kappa1**2-max_curvature**2)/exp_weight**2) \
+            + np.exp((kappa2**2-max_curvature**2)/exp_weight**2))*dnormalized_jacobiandzmns \
+            + (np.exp((kappa1**2-max_curvature**2)/exp_weight**2) \
+            * 2*kappa1*dkappa1dzmns/exp_weight**2 + 
+              np.exp((kappa2**2-max_curvature**2)/exp_weight**2) \
+            * 2*kappa2*dkappa2dzmns/exp_weight**2)*normalized_jacobian,axis=(1,2)) \
             * dtheta * dzeta
+        
+        dmetricdrmnc = np.array(dmetricdrmnc)
+        dmetricdzmns = np.array(dmetricdzmns)
+        
+        dmetricdrmnc[np.isinf(dmetricdrmnc)] = 1e12
+        dmetricdzmns[np.isinf(dmetricdzmns)] = 1e12
+        dmetricdrmnc[np.isnan(dmetricdrmnc)] = 1e12
+        dmetricdzmns[np.isnan(dmetricdzmns)] = 1e12
             
         return dmetricdrmnc, dmetricdzmns
     
@@ -912,13 +979,13 @@ class VmecInput:
         zetas = self.zetas
           
         angle_1s = np.linspace(0, 2*np.pi, 20)
-        angle_2s = np.linspace(0, 2*np.pi, 20)
+        angle_2s = np.linspace(-np.pi, np.pi, 20)
         angle_1s = np.delete(angle_1s, -1)
         angle_2s = np.delete(angle_2s, -1)
         inSurface = False
         for angle_1 in angle_1s:
             for angle_2 in angle_2s:
-                if (angle_1 != angle_2):
+                if (angle_1 != angle_2 and angle_1 != (angle_2+2*np.pi)):
                     R0_angle1 = np.zeros(np.shape(zetas))
                     Z0_angle1 = np.zeros(np.shape(zetas))
                     R0_angle2 = np.zeros(np.shape(zetas))
