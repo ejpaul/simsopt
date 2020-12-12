@@ -328,6 +328,255 @@ class VmecOutput:
         Y = R * np.sin(zeta)
         return X, Y, Z, R
     
+    def B_covariant(self, isurf=-1, theta=None, zeta=None, full=False):
+        if (theta is None and zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+        elif (np.array(theta).shape != np.array(zeta).shape):
+            raise ValueError('Incorrect shape of theta and zeta in '
+                         'B_covariant')
+        if (full==False):
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_covariant.')
+            this_bsubumnc = self.bsubumnc[isurf,:]
+            this_bsubvmnc = self.bsubvmnc[isurf,:]
+        elif (isurf == self.ns_half or isurf == -1):
+            this_bsubumnc = 1.5 * self.bsubumnc[-1,:] - 0.5 * self.bsubumnc[-2,:]
+            this_bsubvmnc = 1.5 * self.bsubvmnc[-1,:] - 0.5 * self.bsubvmnc[-2,:]
+        else:
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_covariant.')
+            this_bsubumnc = 0.5 * (self.bsubumnc[isurf-1,:] + self.bsubumnc[isurf+1,:])
+            this_bsubvmnc = 0.5 * (self.bsubvmnc[isurf-1,:] + self.bsubvmnc[isurf+1,:])
+        
+        Bsubtheta = np.zeros(np.shape(zeta))
+        Bsubzeta = np.zeros(np.shape(zeta))
+        for im in range(self.mnmax_nyq):
+            angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
+            cos_angle = np.cos(angle)
+            Bsubtheta += this_bsubumnc[im] * cos_angle
+            Bsubzeta += this_bsubvmnc[im] * cos_angle
+
+        return Bsubtheta, Bsubzeta
+    
+    def B_contravariant(self, isurf=-1, theta=None, zeta=None, full=False):
+        if (theta is None and zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+        elif (np.array(theta).shape != np.array(zeta).shape):
+            raise ValueError('Incorrect shape of theta and zeta in '
+                         'B_contravariant')
+        if (full==False):
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_contravariant.')
+            this_bsupumnc = self.bsupumnc[isurf,:]
+            this_bsupvmnc = self.bsupvmnc[isurf,:]
+        elif (isurf == self.ns_half or isurf==-1):
+            this_bsupumnc = 1.5 * self.bsupumnc[-1,:] - 0.5 * self.bsupumnc[-2,:]
+            this_bsupvmnc = 1.5 * self.bsupvmnc[-1,:] - 0.5 * self.bsupvmnc[-2,:]
+        else:
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_contravariant.')
+            this_bsupumnc = 0.5 * (self.bsupumnc[isurf-1,:] + self.bsupumnc[isurf+1,:])
+            this_bsupvmnc = 0.5 * (self.bsupvmnc[isurf-1,:] + self.bsupvmnc[isurf+1,:])
+        
+        Bsuptheta = np.zeros(np.shape(zeta))
+        Bsupzeta = np.zeros(np.shape(zeta))
+        for im in range(self.mnmax_nyq):
+            angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
+            cos_angle = np.cos(angle)
+            Bsuptheta += this_bsupumnc[im] * cos_angle
+            Bsupzeta += this_bsupvmnc[im] * cos_angle
+
+        return Bsuptheta, Bsupzeta
+    
+    def B_contravariant_derivatives(self, isurf=-1, theta=None, zeta=None, full=False):
+        if (theta is None and zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+        elif (np.array(theta).shape != np.array(zeta).shape):
+            raise ValueError('Incorrect shape of theta and zeta in '
+                         'B_contravariant_derivatives')
+        if (full==False):
+            if (isurf >= self.ns_half):
+                raise ValueError('''Incorrect value of isurface in 
+                        B_contravariant_derivatives.''')
+            this_bsupumnc = self.bsupumnc[isurf,:]
+            this_bsupvmnc = self.bsupvmnc[isurf,:]
+        elif (isurf == self.ns_half or isurf==-1):
+            this_bsupumnc = 1.5 * self.bsupumnc[-1,:] - 0.5 * self.bsupumnc[-2,:]
+            this_bsupvmnc = 1.5 * self.bsupvmnc[-1,:] - 0.5 * self.bsupvmnc[-2,:]
+        else:
+            if (isurf >= self.ns_half):
+                raise ValueError('''Incorrect value of isurface in 
+                                     B_contravariant_derivatives.''')
+            this_bsupumnc = 0.5 * (self.bsupumnc[isurf-1,:] + self.bsupumnc[isurf+1,:])
+            this_bsupvmnc = 0.5 * (self.bsupvmnc[isurf-1,:] + self.bsupvmnc[isurf+1,:])
+        
+        dBsupthetadtheta = np.zeros(np.shape(zeta))
+        dBsupzetadtheta = np.zeros(np.shape(zeta))
+        dBsupthetadzeta = np.zeros(np.shape(zeta))
+        dBsupzetadzeta = np.zeros(np.shape(zeta))
+        for im in range(self.mnmax_nyq):
+            angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
+            sin_angle = np.sin(angle)
+            dBsupthetadtheta += - self.xm_nyq[im] * this_bsupumnc[im] * sin_angle
+            dBsupzetadtheta +=  - self.xm_nyq[im] * this_bsupvmnc[im] * sin_angle
+            dBsupthetadzeta += self.xn_nyq[im] * this_bsupumnc[im] * sin_angle
+            dBsupzetadzeta +=  self.xn_nyq[im] * this_bsupvmnc[im] * sin_angle
+
+        return dBsupthetadtheta, dBsupzetadtheta, dBsupthetadzeta, dBsupzetadzeta
+    
+    def B_derivatives(self, isurf=-1, theta=None, zeta=None, full=False):
+        if (theta is None and zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+        elif (np.array(theta).shape != np.array(zeta).shape):
+            raise ValueError('Incorrect shape of theta and zeta in '
+                         'B_derivatives')
+        if (full==False):
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_derivatives.')
+            this_bmnc = self.bmnc[isurf,:]
+            this_bmnc = self.bmnc[isurf,:]
+        elif (isurf == self.ns_half or isurf==-1):
+            this_bmnc = 1.5 * self.bmnc[-1,:] - 0.5 * self.bmnc[-2,:]
+            this_bmnc = 1.5 * self.bmnc[-1,:] - 0.5 * self.bmnc[-2,:]
+        else:
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_derivatives.')
+            this_bmnc = 0.5 * (self.bmnc[isurf-1,:] + self.bmnc[isurf+1,:])
+            this_bmnc = 0.5 * (self.bmnc[isurf-1,:] + self.bmnc[isurf+1,:])
+            
+        dBdtheta = np.zeros(np.shape(zeta))
+        dBdzeta = np.zeros(np.shape(zeta))
+        for im in range(self.mnmax_nyq):
+            angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
+            sin_angle = np.sin(angle)
+            dBdtheta += - self.xm_nyq[im] * this_bmnc[im] * sin_angle
+            dBdzeta += self.xn_nyq[im] * this_bmnc[im] * sin_angle
+
+        return dBdtheta, dBdzeta
+    
+    def B_second_derivatives(self, isurf=-1, theta=None, zeta=None, full=False):
+        if (theta is None and zeta is None):
+            theta = self.thetas_2d
+            zeta = self.zetas_2d
+        elif (np.array(theta).shape != np.array(zeta).shape):
+            raise ValueError('Incorrect shape of theta and zeta in '
+                         'B_second_derivatives')
+        if (full==False):
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_second_derivatives.')
+            this_bmnc = self.bmnc[isurf,:]
+            this_bmnc = self.bmnc[isurf,:]
+        elif (isurf == self.ns_half or isurf==-1):
+            this_bmnc = 1.5 * self.bmnc[-1,:] - 0.5 * self.bmnc[-2,:]
+            this_bmnc = 1.5 * self.bmnc[-1,:] - 0.5 * self.bmnc[-2,:]
+        else:
+            if (isurf >= self.ns_half):
+                raise ValueError('Incorrect value of isurface in B_second_derivatives.')
+            this_bmnc = 0.5 * (self.bmnc[isurf-1,:] + self.bmnc[isurf+1,:])
+            this_bmnc = 0.5 * (self.bmnc[isurf-1,:] + self.bmnc[isurf+1,:])
+            
+        d2Bdtheta2 = np.zeros(np.shape(zeta))
+        d2Bdzeta2 = np.zeros(np.shape(zeta))
+        d2Bdthetadzeta = np.zeros(np.shape(zeta))
+        for im in range(self.mnmax_nyq):
+            angle = self.xm_nyq[im] * theta - self.xn_nyq[im] * zeta
+            cos_angle = np.cos(angle)
+            d2Bdtheta2 += - self.xm_nyq[im] * self.xm_nyq[im] * this_bmnc[im] * cos_angle
+            d2Bdzeta2 += - self.xn_nyq[im] * self.xn_nyq[im] * this_bmnc[im] * cos_angle
+            d2Bdthetadzeta += self.xn_nyq[im] * self.xm_nyq[im] * this_bmnc[im] * cos_angle
+
+        return d2Bdtheta2, d2Bdzeta2, d2Bdthetadzeta
+    
+    def minor_radius(self, isurf=1):
+        [X, Y, Z, R] = self.compute_position(isurf=isurf)
+        [dxdtheta, dxdzeta, dydtheta, dydzeta, dZdtheta, dZdzeta] = \
+                self.position_first_derivatives(isurf=isurf)
+        averaged_area = np.sum(dZdtheta * R)*self.dtheta*self.dzeta*self.nfp \
+            / (2*np.pi)
+        return np.sqrt(averaged_area/np.pi)
+    
+    def QS_error(self, isurf=1):
+
+        B = self.compute_modB(isurf=isurf)
+        J = self.flux_jacobian(isurf=isurf)
+        [Bsuptheta,Bsupzeta] = self.B_contravariant(isurf=isurf)
+#         [Bsubtheta,Bsubzeta] = self.B_covariant(isurf=isurf)
+        [dBdtheta, dBdzeta] = self.B_derivatives(isurf=isurf)
+        [dBsupthetadtheta, dBsupzetadtheta, dBsupthetadzeta, dBsupzetadzeta] = \
+            self.B_contravariant_derivatives(isurf=isurf)
+        [d2Bdtheta2, d2Bdzeta2, d2Bdthetadzeta] = \
+            self.B_second_derivatives(isurf=isurf)
+        dBdotgradBdtheta = dBsupthetadtheta * dBdtheta + Bsuptheta * d2Bdtheta2 \
+            + dBsupzetadtheta * dBdzeta + Bsupzeta * d2Bdthetadzeta 
+        dBdotgradBdzeta = dBsupthetadzeta * dBdtheta + Bsuptheta * d2Bdthetadzeta \
+            + dBsupzetadzeta * dBdzeta + Bsupzeta * d2Bdzeta2
+        
+        QS_error = dBdtheta * dBdotgradBdzeta - dBdzeta * dBdotgradBdtheta
+        if (isurf==0):
+            length_scale_l = 0
+        else:
+            length_scale_l = self.minor_radius(isurf=isurf)
+        length_scale_r = self.minor_radius(isurf=isurf+1)
+        length_scale = 0.5*(length_scale_l+length_scale_r)
+        normalization = np.sum(B*B*B*J/length_scale)/np.sum(J)
+                
+        return QS_error/normalization
+    
+    def ripple_Bbar(self, weight_function):
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        Bbar = 0
+        normalization = 0
+        for isurf in range(0,self.ns_half):
+            this_B = self.compute_modB(isurf=isurf)
+            this_J = self.flux_jacobian(isurf=isurf)
+            Bbar += weight_function(self.s_half[isurf])*np.abs(np.sum(this_B*this_J))
+            normalization += weight_function(self.s_half[isurf])*np.abs(np.sum(this_J))
+        Bbar = Bbar/normalization
+        return Bbar
+    
+    def ripple_pperp(self, weight_function, isurf = -1, full=True):
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+            
+        Bbar = self.ripple_Bbar(weight_function)
+        B = self.compute_modB(isurf=isurf,full=full)
+        if (full == True):
+            weight = weight_function(self.s_full[isurf])
+        else:
+            weight = weight_function(self.s_half[isurf])
+            
+        pperp = 0.5 * weight * (Bbar**2 - B**2) / (Bbar * Bbar)
+        
+        return pperp
+    
+    def ripple_axis(self, weight_function):
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        Bbar = self.ripple_Bbar(weight_function)
+        ripple_axis = 0
+        for isurf in range(0,self.ns_half):
+            this_B = self.compute_modB(isurf = isurf)
+            this_J = self.flux_jacobian(isurf = isurf)
+            ripple_axis += weight_function(self.s_half[isurf]) * \
+                np.abs(np.sum(this_J*(this_B-Bbar)*(this_B-Bbar)))
+        return ripple_axis
+
+    def ripple_normalization(self, weight_function):
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        normalization = 0
+        for isurf in range(0,self.ns_half):
+            this_B = self.compute_modB(isurf = isurf)
+            this_J = self.flux_jacobian(isurf = isurf)
+            normalization += weight_function(self.s_half[isurf]) * \
+                np.abs(np.sum(this_J*this_B*this_B))
+        return normalization
+    
     def evaluate_ripple_objective(self, weight_function):
         """
         Computes magnetic ripple objective function
@@ -340,28 +589,9 @@ class VmecOutput:
             ripple_function (float): magnetic ripple objective function
             
         """
-        if (not callable(weight_function)):
-            raise TypeError('weight_function must be a function')
-        Bbar = 0
-        normalization = 0
-        for isurf in range(0,self.ns_half):
-            this_B = self.compute_modB(isurf=isurf)
-            this_J = self.flux_jacobian(isurf=isurf)
-            Bbar += weight_function(self.s_half[isurf])*np.abs(np.sum(this_B*this_J))
-            normalization += weight_function(self.s_half[isurf])*np.abs(np.sum(this_J))
-        Bbar = Bbar/normalization
-        ripple_axis = 0
-        volume = 0
-        for isurf in range(0,self.ns_half):
-            this_B = self.compute_modB(isurf=isurf)
-            this_J = self.flux_jacobian(isurf = isurf)
-            ripple_axis += weight_function(self.s_half[isurf]) * \
-                np.abs(np.sum(this_J*(this_B-Bbar)*(this_B-Bbar)))
-            volume += np.abs(np.sum(this_J))
-        ripple_axis = ripple_axis*0.5*self.nfp*self.dtheta*self.dzeta*self.ds
-        volume = volume*self.nfp*self.dtheta*self.dzeta*self.ds
-        
-        return ripple_axis
+        ripple_axis = self.ripple_axis(weight_function)
+        normalization = self.ripple_normalization(weight_function)
+        return ripple_axis/normalization
 
     def evaluate_iota_objective(self, weight_function):
         """
@@ -392,6 +622,14 @@ class VmecOutput:
         iota_target_function = 0.5 * np.sum(weight_function(self.s_half) * \
                     (self.iota - iota_target)**2) * self.ds 
         return iota_target_function        
+    
+    def evaluate_well_target_objective(self,well_target=1,weight_function=None):
+        if (weight_function is None):
+            weight_function = lambda s : 1
+        if (not callable(weight_function)):
+            raise TypeError('weight_function must be a function')
+        iota_target_function = 0.5 * np.sum(weight_function(self.s_half) * \
+                    (self.vp - well_target)**2) * self.ds 
     
     def evaluate_iota_prime_objective(self, weight_function):
         """
@@ -430,6 +668,15 @@ class VmecOutput:
             raise TypeError('weight_function must be a function')
         well_function = np.sum(weight_function(self.s_half) * self.vp) * \
             self.ds * 4 * np.pi * np.pi / (self.psi[-1])
+        return well_function
+    
+    def evaluate_well_ratio_objective(self, weight_function1, weight_function2):
+        if (not callable(weight_function1)):
+            raise TypeError('weight_function1 must be a function')
+        if (not callable(weight_function2)):
+            raise TypeError('weight_function2 must be a function')
+        well_function = np.sum(weight_function1(self.s_half) * self.vp) \
+            / np.sum(weight_function2(self.s_half) * self.vp)
         return well_function
     
     def evaluate_modB_objective(self, isurf = None):
@@ -950,22 +1197,11 @@ class VmecOutput:
         [dXdu_end, dXdv_end, dYdu_end, dYdv_end, dZdu_end, dZdv_end] = \
             self.position_first_derivatives(-1)
             
-        Bsupu_end = np.zeros(np.shape(self.thetas_2d))
-        Bsupv_end = np.zeros(np.shape(self.thetas_2d))
-        R_end = np.zeros(np.shape(self.thetas_2d))
-        Z_end = np.zeros(np.shape(self.thetas_2d))
-        for im in range(self.mnmax_nyq):
-            angle = self.xm_nyq[im] * self.thetas_2d - self.xn_nyq[im] * self.zetas_2d
-            cos_angle = np.cos(angle)
-            sin_angle = np.sin(angle)
-            Bsupu_end += bsupumnc_end[im] * cos_angle
-            Bsupv_end += bsupvmnc_end[im] * cos_angle
-        for im in range(self.mnmax):
-            angle = self.xm[im] * self.thetas_2d - self.xn[im] * self.zetas_2d
-            cos_angle = np.cos(angle)
-            sin_angle = np.sin(angle)
-            R_end += rmnc_end[im] * cos_angle
-            Z_end += zmns_end[im] * sin_angle
+        [Bsupu_end, Bsupv_end] = self.B_contravariant(full=True,theta=self.thetas_2d,\
+                                                     zeta=self.zetas_2d,isurf=-1)
+        [X, Y, Z_end, R_end] = self.compute_position(theta=self.thetas_2d,\
+                                                     zeta=self.zetas_2d,isurf=-1)
+        
         Bx_end = Bsupu_end * dXdu_end + Bsupv_end * dXdv_end
         By_end = Bsupu_end * dYdu_end + Bsupv_end * dYdv_end
         Bz_end = Bsupu_end * dZdu_end + Bsupv_end * dZdv_end
