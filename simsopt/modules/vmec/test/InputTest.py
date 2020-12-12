@@ -1010,6 +1010,48 @@ class Test(unittest.TestCase):
         xn_sensitivity = self.vmecInput.xn[0:10]
         epsilon = 1e-5
         
+        [dmetric1drmnc, dmetric1dzmns, dmetric2drmnc, dmetric2dzmns] = \
+                self.vmecInput.surface_curvature_metric_integrated_derivatives(\
+                                    xm_sensitivity, xn_sensitivity)
+        
+        def temp_fun_rbc(im, rbc):
+            rbc_init = self.vmecInput.rbc[im]
+            self.vmecInput.rbc[im] = rbc
+            metric = self.vmecInput.surface_curvature_metric_integrated()
+            self.vmecInput.rbc[im] = rbc_init
+            return metric
+
+        def temp_fun_zbs(im, zbs):
+            zbs_init = self.vmecInput.zbs[im]
+            self.vmecInput.zbs[im] = zbs
+            metric = self.vmecInput.surface_curvature_metric_integrated()
+            self.vmecInput.zbs[im] = zbs_init
+            return metric
+
+        for im in range(len(xm_sensitivity)):
+            this_rbc = self.vmecInput.rbc[im]
+            this_zbs = self.vmecInput.zbs[im]
+            dmetric1drmnc_fd = finiteDifferenceDerivative(this_rbc,\
+                lambda rbc : temp_fun_rbc(im,rbc)[0], epsilon=epsilon, \
+                method='centered')
+            dmetric1dzmns_fd = finiteDifferenceDerivative(this_zbs,\
+                lambda zbs : temp_fun_zbs(im,zbs)[0], epsilon=epsilon, \
+                method='centered')
+            dmetric2drmnc_fd = finiteDifferenceDerivative(this_rbc,\
+                lambda rbc : temp_fun_rbc(im,rbc)[1], epsilon=epsilon, \
+                method='centered')
+            dmetric2dzmns_fd = finiteDifferenceDerivative(this_zbs,\
+                lambda zbs : temp_fun_zbs(im,zbs)[1], epsilon=epsilon, \
+                method='centered')
+            self.assertAlmostEqual(dmetric1drmnc_fd, dmetric1drmnc[im], places=5)
+            self.assertAlmostEqual(dmetric2dzmns_fd, dmetric2dzmns[im], places=5)     
+            
+    def test_surface_curvature_metric_derivatives(self):
+        # Check first 10 modes
+        xm_sensitivity = self.vmecInput.xm[0:10]
+        xn_sensitivity = self.vmecInput.xn[0:10]
+        epsilon = 1e-5
+        
         [dmetricdrmnc, dmetricdzmns] = self.vmecInput.surface_curvature_metric_derivatives(\
                                                 xm_sensitivity,xn_sensitivity,exp_weight=1e4)
         
